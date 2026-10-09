@@ -286,3 +286,6 @@ function esc(s) {
 function safeUrl(u) { return /^https:\/\//i.test(u || ""); }
 
 init();
+
+// After the extension reloads itself on a code change, this page's context is dead: refresh it.
+setInterval(() => { if (!chrome.runtime?.id) location.reload(); }, 1500);

@@ -26,3 +26,6 @@ Settings → pick Gemini or OpenAI and paste a key (stored only in this browser)
 ## Notes
 - Campfire is simulated locally (3 seeded friends plus you). A shared backend (e.g. Supabase realtime) would replace `seedCampfire()` in `dashboard.js`.
 - Everything stays in `chrome.storage.local`; nothing is sent anywhere except the optional AI call.
+
+## Live updates while developing
+Unpacked installs auto-reload within a few seconds when any extension file changes (`dev-reload.js`). Load the folder once; after that, edits or `git pull` in that folder show up without touching `chrome://extensions`. Open dashboard tabs need a manual refresh.

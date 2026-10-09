@@ -8,6 +8,7 @@ import {
   isLocked,
   debtLabel,
 } from "./lib/state.js";
+import { startDevReload } from "./dev-reload.js";
 
 const DASHBOARD = chrome.runtime.getURL("dashboard.html");
 
@@ -92,3 +93,5 @@ chrome.action.onClicked.addListener(() => chrome.tabs.create({ url: DASHBOARD })
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === "install") chrome.tabs.create({ url: DASHBOARD + "#welcome" });
 });
+
+startDevReload();
