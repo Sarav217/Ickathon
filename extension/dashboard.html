@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terrarium</title>
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+<header>
+  <div class="brand">🌱 Terrarium</div>
+  <nav>
+    <a href="#home">Home</a>
+    <a href="#settings">Settings</a>
+  </nav>
+</header>
+
+<main id="app"></main>
+
+<div id="hardstop" hidden>
+  <div class="hs-inner">
+    <div class="hs-plant" id="hs-plant"></div>
+    <h1>See you tomorrow.</h1>
+    <p>You paid off your debt and your plant is growing. Nothing here will tempt you to stay.</p>
+    <p class="hs-sub" id="hs-sub"></p>
+    <button id="hs-demo-reset" class="ghost" hidden>Demo: reset lock</button>
+  </div>
+</div>
+
+<script type="module" src="dashboard.js"></script>
+</body>
+</html>
