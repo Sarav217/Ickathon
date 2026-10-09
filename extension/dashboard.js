@@ -3,6 +3,7 @@ import {
   DEBT_THRESHOLD, TASK_MINUTES, DEMO_TASK_SECONDS, MAX_PLANT_STAGE, DEFAULT_SITES,
 } from "./lib/state.js";
 import { MOODS, TIMES, HOBBIES, getTask } from "./lib/tasks.js";
+import { RepCounter, EXERCISES, BONES } from "./lib/reps.js";
 
 const app = document.getElementById("app");
 const hardstop = document.getElementById("hardstop");
@@ -20,6 +21,7 @@ const FRIENDS = [
 let ctx; // {settings, state}
 let timerHandle = null;
 let mirrorHandle = null;
+let poseStop = () => {};
 let mixer = { mood: null, time: "15", hobby: null };
 
 async function init() {
@@ -70,6 +72,7 @@ function plantSVG(stage, size = 180) {
 function route() {
   clearInterval(timerHandle);
   clearInterval(mirrorHandle);
+  poseStop(); poseStop = () => {};
   const cur = location.hash.slice(1).split("?")[0];
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.r === (cur === "welcome" || !cur ? "home" : cur)));
   const [name, qs] = location.hash.slice(1).split("?");
@@ -244,6 +247,7 @@ async function renderTask() {
   const { activeTask } = await chrome.storage.local.get("activeTask");
   if (!activeTask) { location.hash = "#mixer"; return; }
   const { task } = activeTask;
+  if (task.verify && task.verify.type === "pose" && !activeTask.useTimer) return renderPoseTask(task);
   const total = ctx.settings.demoMode ? DEMO_TASK_SECONDS : TASK_MINUTES * 60;
   app.innerHTML = `
     <div class="grid">
@@ -254,32 +258,140 @@ async function renderTask() {
         <ol>${task.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
         ${safeUrl(task.resource_url) ? `<a class="res" href="${esc(task.resource_url)}" target="_blank" rel="noopener">↗ ${esc(task.resource_label || "Open resource")}</a>` : ""}
       </section>
-      <section class="card timer">
+      <section class="card timer" id="timercard">
         <div class="step-label">Timer</div>
         <div class="clock" id="clock">${fmt(total)}</div>
         <div class="ring"><i id="ring"></i></div>
+        <div id="pausedNote" class="sub" style="min-height:22px;color:#a2321f;font-weight:700"></div>
         <button id="start">Start</button>
         <div class="row" style="justify-content:center;margin-top:12px"><button class="ghost" id="swap">Different task</button></div>
-        ${ctx.settings.demoMode ? `<p class="sub" style="margin-top:12px;font-size:12px">Demo Mode: timer is ${DEMO_TASK_SECONDS}s</p>` : ""}
+        <p class="sub" style="margin-top:12px;font-size:12px">${ctx.settings.demoMode ? `Demo Mode: timer is ${DEMO_TASK_SECONDS}s. ` : ""}The timer pauses while a feed site is the tab you're looking at, and you confirm at the end.</p>
       </section>
     </div>`;
   $("#swap").onclick = () => (location.hash = "#mixer");
   let endsAt = activeTask.endsAt;
+  let onFeed = false, last = Date.now(), pausedMs = activeTask.pausedMs || 0;
+  const feedCheck = async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      const host = tab && tab.url && /^https?:/.test(tab.url) ? new URL(tab.url).hostname.replace(/^www\./, "") : "";
+      onFeed = !!host && ctx.settings.sites.some((x) => host === x || host.endsWith("." + x));
+    } catch { onFeed = false; }
+  };
   const tick = async () => {
-    const left = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+    const now = Date.now(), dt = now - last; last = now;
+    if (onFeed) { endsAt += dt; pausedMs += dt; chrome.storage.local.set({ activeTask: { task, endsAt, pausedMs } }); }
+    $("#pausedNote").textContent = onFeed ? "Paused: you're on a feed. Come back to keep going." : pausedMs > 3000 ? `Paused ${Math.round(pausedMs / 1000)}s on feeds so far` : "";
+    const left = Math.max(0, Math.round((endsAt - now) / 1000));
     $("#clock").textContent = fmt(left);
     $("#ring").style.width = ((total - left) / total) * 100 + "%";
-    if (left <= 0) { clearInterval(timerHandle); await complete(task); }
+    if (left <= 0) { clearInterval(timerHandle); clearInterval(feedHandle); renderConfirm(task); }
   };
+  let feedHandle;
   const begin = () => {
     $("#start").disabled = true; $("#start").textContent = "Focus…";
+    last = Date.now();
+    feedHandle = setInterval(feedCheck, 1200); feedCheck();
     timerHandle = setInterval(tick, 500); tick();
+    const oldStop = poseStop; poseStop = () => { clearInterval(feedHandle); oldStop(); };
   };
   if (endsAt) begin();
   $("#start").onclick = async () => {
     endsAt = Date.now() + total * 1000;
-    await chrome.storage.local.set({ activeTask: { task, endsAt } });
+    await chrome.storage.local.set({ activeTask: { ...activeTask, endsAt, pausedMs: 0 } });
     begin();
+  };
+}
+
+function renderConfirm(task) {
+  $("#timercard").innerHTML = `
+    <div class="step-label">Time's up</div>
+    <h2 style="font-size:24px;margin:10px 0">Did you actually do it?</h2>
+    <p class="sub">Be honest. Your plant only grows from real effort, and nobody checks but you.</p>
+    <div class="row" style="justify-content:center">
+      <button id="yes">Yes, I did it</button><button class="ghost" id="no">Not really</button>
+    </div>`;
+  $("#yes").onclick = () => complete(task);
+  $("#no").onclick = async () => { await chrome.storage.local.remove("activeTask"); location.hash = "#mixer"; };
+}
+
+// ---------- camera-verified exercise ----------
+async function renderPoseTask(task) {
+  const goal = ctx.settings.demoMode ? 3 : task.verify.reps;
+  const ex = EXERCISES[task.verify.exercise];
+  app.innerHTML = `
+    <div class="grid">
+      <section class="card task">
+        <div class="step-label">Camera-checked exercise ${ex.emoji}</div>
+        <h1>${esc(task.title)}</h1>
+        <p class="why">${esc(task.why || "")}</p>
+        <ol>${task.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+        <div class="privacy">The camera counts your reps on this device. Video is never saved or sent.</div>
+      </section>
+      <section class="card timer">
+        <div class="step-label">Rep counter</div>
+        <div class="stage"><video id="pv" playsinline muted></video><canvas id="pc"></canvas><div id="pph" class="ph">Camera is off</div></div>
+        <div class="clock" id="reps">0 / ${goal}</div>
+        <div class="ring"><i id="ring"></i></div>
+        <div id="hint" class="sub" style="min-height:22px;font-weight:700">${esc(ex.cue)}</div>
+        <button id="pstart">Start camera check</button>
+        <div class="row" style="justify-content:center;margin-top:12px">
+          <button class="ghost" id="ptimer">No camera? Use the timer</button><button class="ghost" id="swap">Different task</button>
+        </div>
+        <div id="perr"></div>
+      </section>
+    </div>`;
+  $("#swap").onclick = () => (location.hash = "#mixer");
+  $("#ptimer").onclick = async () => {
+    poseStop(); poseStop = () => {};
+    const { activeTask } = await chrome.storage.local.get("activeTask");
+    await chrome.storage.local.set({ activeTask: { ...activeTask, useTimer: true } });
+    renderTask();
+  };
+
+  $("#pstart").onclick = async () => {
+    $("#pstart").disabled = true; $("#pstart").textContent = "Loading model…"; $("#perr").innerHTML = "";
+    let stream, landmarker;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 } });
+      const { PoseLandmarker, FilesetResolver } = await import("./vendor/mediapipe/vision_bundle.mjs");
+      const files = await FilesetResolver.forVisionTasks(chrome.runtime.getURL("vendor/mediapipe"));
+      landmarker = await PoseLandmarker.createFromOptions(files, {
+        baseOptions: { modelAssetPath: chrome.runtime.getURL("vendor/mediapipe/pose_landmarker_lite.task"), delegate: "CPU" },
+        runningMode: "VIDEO", numPoses: 1,
+      });
+    } catch (e) {
+      stream && stream.getTracks().forEach((t) => t.stop());
+      $("#pstart").disabled = false; $("#pstart").textContent = "Start camera check";
+      $("#perr").innerHTML = `<p class="err">Couldn't start the camera (${esc(e.name || e.message)}). Allow it from the camera icon in the address bar, or use the timer instead.</p>`;
+      return;
+    }
+    const video = $("#pv"), canvas = $("#pc"), counter = new RepCounter(task.verify.exercise);
+    video.srcObject = stream; await video.play();
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    $("#pph").hidden = true; $("#pstart").hidden = true;
+    const g = canvas.getContext("2d");
+    let stopped = false, done = false;
+    poseStop = () => { if (stopped) return; stopped = true; stream.getTracks().forEach((t) => t.stop()); try { landmarker.close(); } catch {} };
+    const loop = async () => {
+      if (stopped) return;
+      if (video.readyState >= 2) {
+        const res = landmarker.detectForVideo(video, performance.now());
+        const lm = res.landmarks && res.landmarks[0];
+        const st = counter.update(lm);
+        g.clearRect(0, 0, canvas.width, canvas.height);
+        if (lm) {
+          g.strokeStyle = "#5fae73"; g.lineWidth = 4; g.fillStyle = "#fff";
+          for (const [a, b] of BONES) { if ((lm[a].visibility ?? 1) > .4 && (lm[b].visibility ?? 1) > .4) { g.beginPath(); g.moveTo(lm[a].x * canvas.width, lm[a].y * canvas.height); g.lineTo(lm[b].x * canvas.width, lm[b].y * canvas.height); g.stroke(); } }
+        }
+        $("#reps").textContent = `${st.reps} / ${goal}`;
+        $("#ring").style.width = Math.min(100, (st.reps / goal) * 100) + "%";
+        $("#hint").textContent = st.hint;
+        if (st.reps >= goal && !done) { done = true; poseStop(); await complete(task); return; }
+      }
+      setTimeout(loop, 90);
+    };
+    loop();
   };
 }
 
@@ -294,7 +406,7 @@ async function complete(task) {
   s.plantStage = Math.min(MAX_PLANT_STAGE, s.plantStage + 1);
   s.lastTask = task.title;
   bumpHistory(s, { paid: s.lastPaidDebt, tasks: 1 });
-  s.campfire.push({ who: ctx.settings.name, you: true, at: Date.now(), text: `finished "${task.title}" 🌱` });
+  s.campfire.push({ who: ctx.settings.name, you: true, at: Date.now(), text: `finished "${task.title}" ${task.verify ? "(camera-verified)" : ""} 🌱` });
   await saveState(s);
   await chrome.storage.local.remove("activeTask");
   location.hash = "#done";

@@ -37,3 +37,8 @@ Unpacked installs auto-reload within a few seconds when any extension file chang
 - **Focus Mirror (camera, opt-in)**: runs MediaPipe Face Landmarker bundled in `vendor/mediapipe/`, in an offscreen document, fully on-device. Frames are never stored or sent; only blink rate, eyes closed, yawns and face distance are used. Low blink rate or drowsiness makes debt build faster; debt pauses when you're away. Chrome asks for camera permission once, when you click "Allow camera and turn on" in Settings. Turn it off there at any time.
 - **Insights**: 7-day scroll minutes, debt paid, tasks done, times you walked away.
 - Redesigned widget (gauge ring), alert, Terrarium scene, Hard Stop.
+
+## v2.1: how tasks are verified, and exercises
+- **Camera-checked exercises** (pick "Exercise (camera-checked)" in the Life Mixer): squats, jumping jacks, overhead reaches. A bundled pose model (`vendor/mediapipe/pose_landmarker_lite.task`) counts reps on-device; the task completes when the rep goal is reached (3 reps in Demo Mode). Rep logic is in `lib/reps.js` with tests in `tests/reps.test.mjs` (`node tests/reps.test.mjs`).
+- **Other tasks** can't be seen by a camera (drawing, reading, a walk), so they use: a timer that **pauses while a feed site is the tab you're looking at**, plus an honest "Did you actually do it?" confirmation. Nothing is verified beyond that.
+- More stretch/movement tasks (sun-salutation flow, dance break).

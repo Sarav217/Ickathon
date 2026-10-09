@@ -19,7 +19,8 @@ export const TIMES = [
 export const HOBBIES = [
   { id: "drawing", label: "Drawing", emoji: "✏️" },
   { id: "music", label: "Music", emoji: "🎸" },
-  { id: "movement", label: "Movement", emoji: "🧘" },
+  { id: "fitness", label: "Exercise (camera-checked)", emoji: "💪" },
+  { id: "movement", label: "Stretch & move", emoji: "🧘" },
   { id: "reading", label: "Reading", emoji: "📖" },
   { id: "writing", label: "Writing", emoji: "🖋️" },
   { id: "coding", label: "Coding", emoji: "💻" },
@@ -52,6 +53,14 @@ const FALLBACK = [
     why: "Restless energy wants an outlet. Three rounds and you'll feel reset.",
     steps: ["10 squats", "10 push-ups (knees are fine)", "30-second plank", "Rest 1 minute, repeat 3 times"],
     resource_url: "https://www.nhs.uk/live-well/exercise/strength-exercises/", resource_label: "NHS strength exercises" },
+  { hobby: "movement", moods: ["anxious", "tired", "low", "restless"], title: "Sun-salutation flow, three rounds",
+    why: "Slow, linked movement settles a busy mind and loosens a stiff back.",
+    steps: ["Stand tall, arms up, fold forward", "Step back to a plank, lower, then cobra", "Push back to downward dog, walk forward, rise", "Repeat three rounds, five slow breaths each"],
+    resource_url: "https://www.nhs.uk/live-well/exercise/flexibility-exercises/", resource_label: "NHS flexibility exercises" },
+  { hobby: "movement", moods: ["bored", "restless", "low"], title: "Dance break: three songs",
+    why: "Moving to music is the quickest mood lift there is, and nobody is watching.",
+    steps: ["Pick three songs you love", "Phone down, volume up", "Dance until all three are done"],
+    resource_url: "https://www.bbc.co.uk/sounds/category/music", resource_label: "BBC Sounds: music" },
   { hobby: "reading", moods: ["anxious", "low", "tired", "bored", "restless"], title: "Read one short story",
     why: "One complete story beats a hundred half-watched clips.",
     steps: ["Pick a short story under 15 minutes", "Read it start to finish", "Write down the one line you liked most"],
@@ -86,7 +95,27 @@ const FALLBACK = [
     resource_url: "https://www.inaturalist.org/", resource_label: "iNaturalist" },
 ];
 
+// Physical tasks the camera can verify (counted on-device from pose landmarks, see lib/reps.js).
+const PHYSICAL = [
+  { exercise: "squat", reps: 10, moods: ["tired", "low", "bored"], title: "10 slow squats",
+    why: "Big muscles, fast reset: your legs wake your whole brain up.",
+    steps: ["Stand 2 metres from the screen so your whole body is in view", "Feet shoulder-width apart", "Sink until your thighs are near parallel, then stand tall", "The camera counts each rep for you"] },
+  { exercise: "jacks", reps: 20, moods: ["restless", "anxious", "bored"], title: "20 jumping jacks",
+    why: "Restless or anxious energy needs somewhere to go. This is a fast way to spend it.",
+    steps: ["Stand 2 metres from the screen so your whole body is in view", "Arms overhead and feet wide, then back together", "Keep a steady rhythm", "The camera counts each rep for you"] },
+  { exercise: "reach", reps: 12, moods: ["tired", "low", "anxious", "restless", "bored"], title: "12 overhead reaches",
+    why: "Scrolling hunches your neck and shoulders. This opens them back up.",
+    steps: ["Sit or stand so your head, shoulders and hands are in view", "Reach both hands high above your head", "Lower them back to your shoulders", "The camera counts each rep for you"] },
+];
+
+export function pickPhysical(mood) {
+  const match = PHYSICAL.filter((t) => t.moods.includes(mood));
+  const t = (match.length ? match : PHYSICAL)[Math.floor(Math.random() * (match.length || PHYSICAL.length))];
+  return { ...t, duration: 15, source: "bundled", verify: { type: "pose", exercise: t.exercise, reps: t.reps } };
+}
+
 export function pickFallback(mood, hobby) {
+  if (hobby === "fitness") return pickPhysical(mood);
   const byHobby = FALLBACK.filter((t) => t.hobby === hobby);
   const pool = byHobby.length ? byHobby : FALLBACK;
   const match = pool.filter((t) => t.moods.includes(mood));
@@ -134,6 +163,7 @@ async function callOpenAI(key, model, body) {
 }
 
 export async function getTask(input, settings) {
+  if (input.hobby === "fitness") return pickPhysical(input.mood); // verified exercises are bundled so the camera knows what to count
   if (settings.aiProvider !== "none" && settings.aiKey) {
     try {
       const call = settings.aiProvider === "gemini" ? callGemini : callOpenAI;
