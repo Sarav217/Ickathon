@@ -1,5 +1,5 @@
 import {
-  load, saveState, saveSettings, rollDay, isLocked, nextMidnight, debtLabel,
+  load, saveState, saveSettings, rollDay, isLocked, nextMidnight, debtLabel, bumpHistory, todayKey,
   DEBT_THRESHOLD, TASK_MINUTES, DEMO_TASK_SECONDS, MAX_PLANT_STAGE, DEFAULT_SITES,
 } from "./lib/state.js";
 import { MOODS, TIMES, HOBBIES, getTask } from "./lib/tasks.js";
@@ -19,6 +19,7 @@ const FRIENDS = [
 
 let ctx; // {settings, state}
 let timerHandle = null;
+let mirrorHandle = null;
 let mixer = { mood: null, time: "15", hobby: null };
 
 async function init() {
@@ -68,6 +69,9 @@ function plantSVG(stage, size = 180) {
 // ---------- routing ----------
 function route() {
   clearInterval(timerHandle);
+  clearInterval(mirrorHandle);
+  const cur = location.hash.slice(1).split("?")[0];
+  document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.r === (cur === "welcome" || !cur ? "home" : cur)));
   const [name, qs] = location.hash.slice(1).split("?");
   const params = new URLSearchParams(qs || "");
   const locked = isLocked(ctx.state);
@@ -79,6 +83,7 @@ function route() {
     case "task": return renderTask();
     case "done": return renderDone();
     case "settings": return renderSettings();
+    case "insights": return renderInsights();
     default: return renderHome(name === "welcome");
   }
 }
@@ -99,39 +104,107 @@ function timeAgo(at) {
 function renderHome(welcome) {
   const s = ctx.state;
   const label = debtLabel(s.debt);
+  const t = s.history[todayKey()] || { scroll: 0 };
   app.innerHTML = `
-    ${welcome ? `<div class="toast">Installed. Open Instagram, YouTube or Reddit and watch the Focus Debt widget build.</div>` : ""}
+    ${welcome ? `<div class="toast">Installed. Open Instagram, YouTube or Reddit: you'll get a 5-second pause first, then the Focus Debt widget.</div>` : ""}
     <div class="grid">
-      <section class="card celebrate">
-        <div class="step-label">Your terrarium</div>
-        <div class="pot">${plantSVG(s.plantStage)}</div>
-        <div class="stats">
-          <div class="stat"><b>${Math.floor(s.debt)}m</b><span>Focus Debt · ${label}</span></div>
-          <div class="stat"><b>${s.plantStage}/${MAX_PLANT_STAGE}</b><span>Growth</span></div>
-          <div class="stat"><b>${s.tasksDone}</b><span>Tasks done</span></div>
-        </div>
-        <p class="sub" style="margin-top:16px">${s.plantStage >= MAX_PLANT_STAGE ? "Fully bloomed! Keep tending it." : "Every 15-minute task grows your plant."}</p>
-        <button id="go">Pay off debt now</button>
-        ${ctx.settings.demoMode ? `<div class="row" style="margin-top:12px;justify-content:center">
-          <button class="ghost" id="addDebt">Demo: add ${DEBT_THRESHOLD} min debt</button>
-          <button class="ghost" id="resetAll">Demo: reset everything</button></div>` : ""}
-      </section>
-      <section class="card">
-        <div class="step-label">🔥 Campfire</div>
-        <h2>Friends who stepped away today</h2>
-        <ul class="log">
-          ${s.campfire.slice().sort((a, b) => b.at - a.at).map((e) =>
-            `<li class="${e.you ? "you" : ""}"><span class="who">${esc(e.you ? ctx.settings.name : e.who)}</span> ${esc(e.text)}<time>${timeAgo(e.at)}</time></li>`).join("") || `<li class="empty">Nobody yet.</li>`}
-        </ul>
-        <p class="fire">Up to 5 friends. No leaderboard, no streak shaming.</p>
-      </section>
+      <div class="stack">
+        <section class="card">
+          <div class="step-label">Your terrarium</div>
+          <div class="scene">
+            <div class="sun"></div><div class="cloud"></div><div class="cloud c2"></div>
+            <div class="hill"></div><div class="hill b"></div>
+            <div class="plantwrap">${plantSVG(s.plantStage, 200)}</div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>${Math.floor(s.debt)}m</b><span>Focus Debt · ${label}</span></div>
+            <div class="stat"><b>${s.plantStage}/${MAX_PLANT_STAGE}</b><span>Growth</span></div>
+            <div class="stat"><b>${Math.round(t.scroll / 60)}m</b><span>Scrolled today</span></div>
+          </div>
+          <p class="sub" style="margin:14px 0">${s.plantStage >= MAX_PLANT_STAGE ? "Fully bloomed! Keep tending it." : "Every 15-minute task grows your plant."}</p>
+          <div class="row"><button id="go">Pay off debt now</button></div>
+          ${ctx.settings.demoMode ? `<div class="row" style="margin-top:14px">
+            <button class="ghost" id="addDebt">Demo: add ${DEBT_THRESHOLD} min debt</button>
+            <button class="ghost" id="resetAll">Demo: reset everything</button></div>` : ""}
+        </section>
+      </div>
+      <div class="stack">
+        <section class="card">
+          <div class="step-label">🔥 Campfire</div>
+          <h2>Friends who stepped away today</h2>
+          <ul class="log">
+            ${s.campfire.slice().sort((a, b) => b.at - a.at).map((e) =>
+              `<li class="${e.you ? "you" : ""}"><span class="who">${esc(e.you ? ctx.settings.name : e.who)}</span> ${esc(e.text)}<time>${timeAgo(e.at)}</time></li>`).join("") || `<li class="empty">Nobody yet.</li>`}
+          </ul>
+          <p class="fire">Up to 5 friends. No leaderboard, no streak shaming.</p>
+        </section>
+        <section class="card" id="mirror-card"></section>
+      </div>
     </div>`;
   $("#go").onclick = () => (location.hash = "#mixer");
   if ($("#addDebt")) $("#addDebt").onclick = async () => { s.debt += DEBT_THRESHOLD; await saveState(s); renderHome(); };
   if ($("#resetAll")) $("#resetAll").onclick = async () => {
-    Object.assign(s, { debt: 0, plantStage: 0, tasksDone: 0, lockedUntil: 0, campfire: [] });
-    seedCampfire(); await saveState(s); await chrome.storage.session?.remove("task"); renderHome();
+    Object.assign(s, { debt: 0, plantStage: 0, tasksDone: 0, lockedUntil: 0, campfire: [], history: {}, gatePasses: {} });
+    seedCampfire(); await saveState(s); await chrome.storage.local.remove("activeTask"); renderHome();
   };
+  renderMirrorCard();
+}
+
+// ---------- Focus Mirror card ----------
+function renderMirrorCard() {
+  const el = $("#mirror-card");
+  if (!el) return;
+  if (!ctx.settings.camera) {
+    el.innerHTML = `<div class="step-label">📷 Focus Mirror</div><h2>See your fatigue as it builds</h2>
+      <p class="sub" style="margin-bottom:14px">Optional. Uses your camera, on this device only, to notice low blink rate, yawns, long eye closure and sitting too close. Nothing is recorded or uploaded.</p>
+      <a href="#settings"><button class="ghost">Set up in Settings</button></a>`;
+    return;
+  }
+  const draw = async () => {
+    const c = await chrome.runtime.sendMessage({ type: "cam-read" }).catch(() => null);
+    if (!el.isConnected) return clearInterval(mirrorHandle);
+    let body;
+    if (!c || !c.fresh) body = `<p class="sub">${c && c.error ? `<span class="err">${esc(c.error)}</span>` : "Starting camera…"}</p>`;
+    else if (!c.present) body = `<p class="sub">No face in view. Debt is paused while you're away.</p>`;
+    else body = `<div class="mirror">
+        <div class="m ${c.lowBlink ? "warn" : ""}"><b>${c.blinksPerMin}/min</b><span>Blink rate (healthy: 12+)</span></div>
+        <div class="m ${c.drowsy ? "bad" : ""}"><b>${c.drowsy ? "Drowsy" : "Alert"}</b><span>Eyes & yawns</span></div>
+        <div class="m ${c.tooClose ? "warn" : ""}"><b>${c.tooClose ? "Too close" : "Good"}</b><span>Distance</span></div>
+        <div class="m"><b>On</b><span>Frames stay on-device</span></div></div>`;
+    el.innerHTML = `<div class="step-label"><span class="dot ${c && c.fresh ? "" : "off"}"></span>Focus Mirror · live</div><h2>How you look right now</h2>${body}`;
+  };
+  draw();
+  mirrorHandle = setInterval(draw, 1500);
+}
+
+// ---------- insights ----------
+function renderInsights() {
+  const h = ctx.state.history;
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const k = todayKey(d);
+    days.push({ k, label: d.toLocaleDateString([], { weekday: "short" }), ...(h[k] || { scroll: 0, paid: 0, tasks: 0, gateSkips: 0 }), today: i === 0 });
+  }
+  const max = Math.max(60, ...days.map((d) => d.scroll));
+  const sum = (f) => days.reduce((a, d) => a + (d[f] || 0), 0);
+  app.innerHTML = `
+    <h1>Insights</h1><p class="sub">The last 7 days, kept only in this browser.</p>
+    <div class="grid">
+      <section class="card">
+        <div class="step-label">Minutes on feed sites</div>
+        <div class="bars">${days.map((d) => `<div class="bar"><em>${Math.round(d.scroll / 60)}</em><i class="${d.today ? "today" : ""}" style="height:${Math.max(3, (d.scroll / max) * 100)}%"></i><span>${d.label}</span></div>`).join("")}</div>
+      </section>
+      <section class="card">
+        <div class="stats" style="grid-template-columns:1fr 1fr">
+          <div class="stat"><b>${Math.round(sum("scroll") / 60)}m</b><span>Scrolled this week</span></div>
+          <div class="stat"><b>${Math.round(sum("paid"))}m</b><span>Debt paid off</span></div>
+          <div class="stat"><b>${sum("tasks")}</b><span>Micro-tasks done</span></div>
+          <div class="stat"><b>${sum("gateSkips")}</b><span>Times you walked away at the pause</span></div>
+        </div>
+        <p class="sub" style="margin:16px 0 0;font-size:13px">${ctx.settings.demoMode ? "Demo Mode inflates scroll time, so these numbers are illustrative." : "Real time, measured only while a feed tab is in front."}</p>
+      </section>
+    </div>`;
 }
 
 // ---------- life mixer ----------
@@ -220,6 +293,7 @@ async function complete(task) {
   s.tasksDone += 1;
   s.plantStage = Math.min(MAX_PLANT_STAGE, s.plantStage + 1);
   s.lastTask = task.title;
+  bumpHistory(s, { paid: s.lastPaidDebt, tasks: 1 });
   s.campfire.push({ who: ctx.settings.name, you: true, at: Date.now(), text: `finished "${task.title}" 🌱` });
   await saveState(s);
   await chrome.storage.local.remove("activeTask");
@@ -227,8 +301,20 @@ async function complete(task) {
 }
 
 // ---------- done → Hard Stop ----------
+function confetti() {
+  const box = document.createElement("div"); box.className = "confetti";
+  const cols = ["#5fae73", "#e9b949", "#f2a1b5", "#7ec0e8", "#e0614a"];
+  for (let i = 0; i < 48; i++) {
+    const p = document.createElement("i");
+    p.style.cssText = `left:${Math.random() * 100}%;background:${cols[i % cols.length]};animation-delay:${Math.random() * 0.8}s;animation-duration:${2 + Math.random() * 1.5}s`;
+    box.appendChild(p);
+  }
+  document.body.appendChild(box); setTimeout(() => box.remove(), 4500);
+}
+
 function renderDone() {
   const s = ctx.state;
+  confetti();
   app.innerHTML = `
     <div class="card celebrate">
       <div class="step-label">Debt paid</div>
@@ -248,26 +334,77 @@ function renderDone() {
 // ---------- settings ----------
 function renderSettings() {
   const st = ctx.settings;
+  const opt = (id, title, desc, on) => `<label class="opt"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><span><b>${title}</b><small>${desc}</small></span></label>`;
   app.innerHTML = `
-    <div class="card">
-      <h1>Settings</h1>
-      <div class="toggle"><input type="checkbox" id="demo" ${st.demoMode ? "checked" : ""}><label for="demo" style="margin:0">Demo Mode (10 min of debt in about 20 seconds, 15-second timer)</label></div>
-      <label for="name">Your name on the Campfire</label><input type="text" id="name" value="${esc(st.name)}">
-      <label for="sites">Distraction sites (comma separated)</label><input type="text" id="sites" value="${esc(st.sites.join(", "))}">
-      <label for="prov">Optional AI for task generation</label>
-      <select id="prov">
-        <option value="none" ${st.aiProvider === "none" ? "selected" : ""}>None (bundled tasks)</option>
-        <option value="gemini" ${st.aiProvider === "gemini" ? "selected" : ""}>Gemini</option>
-        <option value="openai" ${st.aiProvider === "openai" ? "selected" : ""}>OpenAI</option>
-      </select>
-      <label for="key">API key (stored only in this browser)</label><input type="password" id="key" value="${esc(st.aiKey)}" autocomplete="off">
-      <div class="row" style="margin-top:20px"><button id="save">Save</button><button class="ghost" id="clear">Reset all data</button></div>
-      <div id="msg"></div>
+    <h1>Settings</h1><p class="sub">Every technique is optional. Turn on what helps.</p>
+    <div class="grid">
+      <div class="stack">
+        <section class="card">
+          <h2>Anti-doomscroll techniques</h2>
+          ${opt("gate", "Mindful pause", "A 5-second breath and a quick \"why are you here, and for how long?\" before a feed opens.", st.gate)}
+          ${opt("fade", "Colour fade", "The page slowly drains to greyscale as your Focus Debt builds, so scrolling literally gets duller.", st.fade)}
+          ${opt("breaks", "20-20-20 eye breaks", "While you're drifting, a nudge every 20 minutes to look 20 feet away for 20 seconds.", st.breaks)}
+          ${opt("demo", "Demo Mode", "10 min of debt in ~20 seconds, a 15-second timer and a 10-minute Hard Stop.", st.demoMode)}
+        </section>
+        <section class="card">
+          <h2>📷 Focus Mirror (camera)</h2>
+          <div class="privacy"><b>Private by design.</b> Video is analysed on this device by a bundled model. Frames are never saved or sent anywhere, and only four numbers (blink rate, eyes closed, yawns, distance) are used. Chrome shows its camera indicator whenever it's on, and you can switch it off here at any time.</div>
+          <div class="row"><button id="camToggle" class="${st.camera ? "danger" : ""}">${st.camera ? "Turn off camera" : "Allow camera and turn on"}</button></div>
+          <div id="camMsg"></div>
+          <p class="sub" style="margin:12px 0 0;font-size:13px">What it changes: low blink rate or drowsiness makes debt build faster, and debt pauses while you're not in front of the screen.</p>
+        </section>
+      </div>
+      <div class="stack">
+        <section class="card">
+          <h2>You</h2>
+          <label class="fld" for="name">Name on the Campfire</label><input type="text" id="name" value="${esc(st.name)}">
+          <label class="fld" for="sites">Distraction sites (comma separated)</label><input type="text" id="sites" value="${esc(st.sites.join(", "))}">
+        </section>
+        <section class="card">
+          <h2>Optional AI tasks</h2>
+          <label class="fld" for="prov">Provider</label>
+          <select id="prov">
+            <option value="none" ${st.aiProvider === "none" ? "selected" : ""}>None (bundled tasks)</option>
+            <option value="gemini" ${st.aiProvider === "gemini" ? "selected" : ""}>Gemini</option>
+            <option value="openai" ${st.aiProvider === "openai" ? "selected" : ""}>OpenAI</option>
+          </select>
+          <label class="fld" for="key">API key (stored only in this browser)</label><input type="password" id="key" value="${esc(st.aiKey)}" autocomplete="off">
+        </section>
+        <div class="row"><button id="save">Save</button><button class="ghost" id="clear">Reset all data</button></div>
+        <div id="msg"></div>
+      </div>
     </div>`;
+
+  $("#camToggle").onclick = async () => {
+    const msg = $("#camMsg");
+    msg.innerHTML = "";
+    if (ctx.settings.camera) {
+      ctx.settings.camera = false;
+      await saveSettings(ctx.settings);
+      await chrome.runtime.sendMessage({ type: "cam-sync" });
+      return renderSettings();
+    }
+    try {
+      // This is the moment Chrome asks for permission. The grant belongs to the extension and is remembered.
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch (e) {
+      msg.innerHTML = `<p class="err">Camera access wasn't granted (${esc(e.name)}). Allow it from the camera icon in the address bar, then try again.</p>`;
+      return;
+    }
+    ctx.settings.camera = true;
+    await saveSettings(ctx.settings);
+    await chrome.runtime.sendMessage({ type: "cam-sync" });
+    renderSettings();
+  };
+
   $("#save").onclick = async () => {
     ctx.settings = {
-      ...st,
+      ...ctx.settings,
       demoMode: $("#demo").checked,
+      gate: $("#gate").checked,
+      fade: $("#fade").checked,
+      breaks: $("#breaks").checked,
       name: $("#name").value.trim() || "You",
       sites: $("#sites").value.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean),
       aiProvider: $("#prov").value,
@@ -275,9 +412,14 @@ function renderSettings() {
     };
     if (!ctx.settings.sites.length) ctx.settings.sites = DEFAULT_SITES;
     await saveSettings(ctx.settings);
-    $("#msg").innerHTML = `<div class="toast">Saved.</div>`;
+    $("#msg").innerHTML = `<div class="toast" style="margin-top:14px">Saved.</div>`;
   };
-  $("#clear").onclick = async () => { await chrome.storage.local.clear(); location.hash = "#home"; location.reload(); };
+  $("#clear").onclick = async () => {
+    await chrome.storage.local.clear();
+    ctx.settings.camera = false;
+    await chrome.runtime.sendMessage({ type: "cam-sync" });
+    location.hash = "#home"; location.reload();
+  };
 }
 
 function esc(s) {

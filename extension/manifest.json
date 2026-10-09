@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Terrarium: Focus Debt",
   "short_name": "Terrarium",
-  "version": "1.0.0",
-  "description": "Catches doomscrolling as it happens, shows your Focus Debt, and swaps it for one 15-minute micro-task. Then it switches itself off until tomorrow.",
+  "version": "2.0.0",
+  "description": "Catches doomscrolling as it happens, shows your Focus Debt, and swaps it for one 15-minute micro-task. Optional on-device camera Focus Mirror. Then it switches itself off until tomorrow.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -11,17 +11,14 @@
   },
   "action": {
     "default_title": "Open your Terrarium",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png"
-    }
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png" }
   },
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
-  "permissions": ["storage", "tabs", "alarms"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["storage", "tabs", "alarms", "offscreen"],
   "host_permissions": ["<all_urls>"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],

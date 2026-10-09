@@ -1,14 +1,8 @@
-// Shared state helpers for the background worker and the Terrarium dashboard.
+// Shared state helpers for the background worker, camera worker and the Terrarium dashboard.
 // Everything lives in chrome.storage.local, so no account or server is needed.
 
 export const DEFAULT_SITES = [
-  "instagram.com",
-  "youtube.com",
-  "reddit.com",
-  "tiktok.com",
-  "x.com",
-  "twitter.com",
-  "facebook.com",
+  "instagram.com", "youtube.com", "reddit.com", "tiktok.com", "x.com", "twitter.com", "facebook.com",
 ];
 
 // Debt is measured in "debt minutes". One real minute of calm scrolling = 1 debt minute.
@@ -25,12 +19,17 @@ export const DEFAULT_SETTINGS = {
   aiKey: "",
   aiModel: "",
   name: "You",
+  camera: false, // opt-in, on-device Focus Mirror
+  gate: true, // "what did you come here for?" pause before a feed opens
+  fade: true, // page slowly drains to greyscale as debt builds
+  breaks: true, // 20-20-20 eye-break nudges while Drifting
+  gateSeconds: 5,
 };
 
 export const DEFAULT_STATE = {
   debt: 0, // debt minutes
   scrollSeconds: 0, // real seconds spent on distraction sites today
-  day: "", // YYYY-MM-DD the counters belong to
+  day: "",
   snoozeUntilDebt: 0,
   tasksDone: 0,
   plantStage: 0,
@@ -38,6 +37,8 @@ export const DEFAULT_STATE = {
   lastTask: null,
   lastPaidDebt: 0,
   campfire: [], // [{who, text, at, you?}]
+  history: {}, // { "YYYY-MM-DD": { scroll: seconds, paid: debt minutes, tasks: n, gateSkips: n } }
+  gatePasses: {}, // { host: epoch ms until which the intent gate stays open }
 };
 
 export function todayKey(d = new Date()) {
@@ -77,6 +78,14 @@ export function isLocked(state, now = Date.now()) {
   return state.lockedUntil > now;
 }
 
+export function bumpHistory(state, patch) {
+  const k = todayKey();
+  const h = (state.history[k] ||= { scroll: 0, paid: 0, tasks: 0, gateSkips: 0 });
+  for (const [key, v] of Object.entries(patch)) h[key] = (h[key] || 0) + v;
+  const keys = Object.keys(state.history).sort();
+  while (keys.length > 14) delete state.history[keys.shift()];
+}
+
 // Roll counters over at midnight: debt carries over (it's debt), the scroll clock and lock reset.
 export function rollDay(state) {
   const today = todayKey();
@@ -84,6 +93,7 @@ export function rollDay(state) {
     state.day = today;
     state.scrollSeconds = 0;
     state.snoozeUntilDebt = 0;
+    state.gatePasses = {};
     state.campfire = (state.campfire || []).filter((e) => todayKey(new Date(e.at)) === today);
   }
   return state;

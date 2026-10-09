@@ -1,6 +1,6 @@
 # Ickathon: Terrarium (IEEE WIE Ick-a-thon Round 2)
 
-A Chrome extension that catches doomscrolling, shows your **Focus Debt**, sends you to a **Terrarium** for one 15-minute micro-task (picked by mood, time and hobby), logs it at the **Campfire**, and then **Hard Stops** the feeds until tomorrow.
+A Chrome extension (v2: mindful pause, colour fade, optional on-device camera Focus Mirror) that catches doomscrolling, shows your **Focus Debt**, sends you to a **Terrarium** for one 15-minute micro-task (picked by mood, time and hobby), logs it at the **Campfire**, and then **Hard Stops** the feeds until tomorrow.
 
 - Extension source: [`extension/`](extension/) (see [`extension/README.md`](extension/README.md))
 - Screenshots of the full flow: [`screenshots/`](screenshots/)
