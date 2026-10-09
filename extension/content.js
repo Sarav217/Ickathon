@@ -12,8 +12,8 @@
       }
     });
 
-  const first = await send({ type: "check", host: location.hostname });
-  if (!first || !first.tracked) return;
+  const first = await send({ type: "check", host: location.hostname, path: location.pathname });
+  if (!first || !first.hostTracked) return; // not one of the user's feed sites at all
   const siteName = location.hostname.replace(/^www\./, "");
 
   // ---- Scroll intensity: pixels scrolled per second, normalised (fast, continuous = zoning out) ----
@@ -175,7 +175,7 @@
       if (n <= 0) { clearInterval(t); $("#count").textContent = "✓"; $("#gopen").disabled = false; }
     }, 1000);
   }
-  let purpose = "";
+  let purpose = "", gateDone = false;
   $("#purpose").addEventListener("click", (e) => {
     const b = e.target.closest(".chip"); if (!b) return;
     purpose = b.dataset.v;
@@ -187,7 +187,8 @@
   });
   $("#gopen").addEventListener("click", async () => {
     const minutes = Number(root.querySelector("#budget .sel")?.dataset.v || 10);
-    await send({ type: "gatePass", host: location.hostname, minutes, purpose });
+    await send({ type: "gatePass", host: location.hostname, path: location.pathname, minutes, purpose });
+    gateDone = true;
     gate.classList.remove("on");
     widget.classList.add("on");
     showToast("🎯", `${minutes} minutes, on purpose`, purpose ? `You're here to ${purpose}. We'll tell you when it's up.` : "We'll tell you when it's up.", 4500);
@@ -209,6 +210,14 @@
   function render(v) {
     if (!v || v.error) return;
     locked = v.locked;
+    if (!v.tracked) {
+      // On a feed site but not on a feed page (e.g. a YouTube lecture): stay out of the way.
+      [dim, alertEl, widget].forEach((el) => el.classList.remove("on"));
+      fadeEl.style.backdropFilter = "none"; fadeEl.style.webkitBackdropFilter = "none";
+      return;
+    }
+    if (v.needsGate && !gate.classList.contains("on")) openGate(v);
+    if (!gate.classList.contains("on") && !v.locked) widget.classList.add("on");
     const mins = Math.floor(v.debt);
     const frac = Math.min(1, v.debt / v.threshold);
     const state = v.label.toLowerCase();
@@ -255,9 +264,12 @@
         $("#pay").textContent = "Close this tab";
         $("#later").style.display = "none";
       } else {
-        $("#apill").textContent = "Drained";
+        $("#apill").textContent = v.overBudget === "items" ? "Daily limit" : v.overBudget === "site" ? "Site budget used" : "Drained";
         $("#anum").parentElement.style.display = "";
-        $("#amsg").innerHTML = `You've been on <b>${siteName}</b> long enough to owe yourself.<br>Trade the next 15 minutes for one small thing you'll actually remember.`;
+        const lead = v.overBudget === "items" ? `That's <b>${v.items}</b> Shorts, Reels and videos today, past your limit of ${v.itemLimit}.`
+          : v.overBudget === "site" ? `You've used your <b>${v.siteBudget} minutes</b> for ${siteName} today.`
+          : `You've been on <b>${siteName}</b> long enough to owe yourself.`;
+        $("#amsg").innerHTML = `${lead}<br>Trade the next 15 minutes for one small thing you'll actually remember.`;
         const why = [];
         if (cam && cam.fresh && cam.lowBlink) why.push("blinking less than usual");
         if (cam && cam.fresh && cam.drowsy) why.push("looking drowsy");
@@ -282,17 +294,18 @@
   }
 
   // ---- go ----
-  if (first.needsGate) {
-    openGate(first);
-  } else {
-    widget.classList.add("on");
-  }
   render(first);
 
+  const itemKey = (p) => (/^\/(shorts|reels?)\/[^/]+/.test(p) || /\/video\/\d+/.test(p) ? p : "");
+  let lastItem = itemKey(location.pathname);
   setInterval(async () => {
     if (document.visibilityState !== "visible" || gate.classList.contains("on")) return;
-    const intensity = scrolled / 1500;
+    const px = scrolled, intensity = scrolled / 1500;
     scrolled = 0;
-    render(await send({ type: "tick", dt: 1, intensity }));
+    // Each new Short / Reel / TikTok URL is one more item watched (feeds change the URL as you swipe).
+    const key = itemKey(location.pathname);
+    const items = key && key !== lastItem ? 1 : 0;
+    lastItem = key;
+    render(await send({ type: "tick", host: location.hostname, path: location.pathname, dt: 1, intensity, px, items }));
   }, 1000);
 })();

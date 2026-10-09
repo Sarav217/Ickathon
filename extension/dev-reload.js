@@ -1,6 +1,6 @@
 // Dev auto-reload for unpacked installs: when you edit or `git pull` files in the extension folder,
 // the extension reloads itself within a few seconds. Does nothing for store-installed copies.
-const FILES = ["manifest.json", "background.js", "content.js", "camera.js", "dashboard.js", "dashboard.html", "dashboard.css", "lib/state.js", "lib/tasks.js"];
+const FILES = ["manifest.json", "background.js", "content.js", "camera.js", "dashboard.js", "dashboard.html", "dashboard.css", "popup.js", "popup.html", "popup.css", "lib/state.js", "lib/tasks.js"];
 
 async function fingerprint() {
   const parts = await Promise.all(FILES.map(async (f) => {

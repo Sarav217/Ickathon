@@ -1,6 +1,6 @@
 import {
   load, saveState, saveSettings, rollDay, isLocked, nextMidnight, debtLabel, bumpHistory, todayKey,
-  DEBT_THRESHOLD, TASK_MINUTES, DEMO_TASK_SECONDS, MAX_PLANT_STAGE, DEFAULT_SITES,
+  DEBT_THRESHOLD, TASK_MINUTES, DEMO_TASK_SECONDS, MAX_PLANT_STAGE, DEFAULT_SITES, DEFAULT_RULES, matchRule,
 } from "./lib/state.js";
 import { MOODS, TIMES, HOBBIES, getTask } from "./lib/tasks.js";
 import { RepCounter, EXERCISES, BONES } from "./lib/reps.js";
@@ -187,7 +187,7 @@ function renderInsights() {
   for (let i = 6; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
     const k = todayKey(d);
-    days.push({ k, label: d.toLocaleDateString([], { weekday: "short" }), ...(h[k] || { scroll: 0, paid: 0, tasks: 0, gateSkips: 0 }), today: i === 0 });
+    days.push({ k, label: d.toLocaleDateString([], { weekday: "short" }), ...(h[k] || { scroll: 0, paid: 0, tasks: 0, gateSkips: 0, items: 0, px: 0 }), today: i === 0 });
   }
   const max = Math.max(60, ...days.map((d) => d.scroll));
   const sum = (f) => days.reduce((a, d) => a + (d[f] || 0), 0);
@@ -204,6 +204,8 @@ function renderInsights() {
           <div class="stat"><b>${Math.round(sum("paid"))}m</b><span>Debt paid off</span></div>
           <div class="stat"><b>${sum("tasks")}</b><span>Micro-tasks done</span></div>
           <div class="stat"><b>${sum("gateSkips")}</b><span>Times you walked away at the pause</span></div>
+          <div class="stat"><b>${sum("items")}</b><span>Shorts, Reels &amp; videos</span></div>
+          <div class="stat"><b>${(sum("px") * 0.00026 / 1000 * 1000).toFixed(1)}m</b><span>Thumb distance scrolled</span></div>
         </div>
         <p class="sub" style="margin:16px 0 0;font-size:13px">${ctx.settings.demoMode ? "Demo Mode inflates scroll time, so these numbers are illustrative." : "Real time, measured only while a feed tab is in front."}</p>
       </section>
@@ -275,7 +277,7 @@ async function renderTask() {
     try {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       const host = tab && tab.url && /^https?:/.test(tab.url) ? new URL(tab.url).hostname.replace(/^www\./, "") : "";
-      onFeed = !!host && ctx.settings.sites.some((x) => host === x || host.endsWith("." + x));
+      onFeed = !!host && !!matchRule(host, new URL(tab.url).pathname, ctx.settings.rules).rule;
     } catch { onFeed = false; }
   };
   const tick = async () => {
@@ -460,19 +462,67 @@ function renderDone() {
 }
 
 // ---------- settings ----------
+let settingsUnlockedUntil = 0;
+const UNLOCK_PHRASE = "I choose to unlock";
+
+function renderSettingsLock() {
+  app.innerHTML = `
+    <div class="card" style="max-width:560px;margin:30px auto;text-align:center">
+      <div class="step-label">Settings are locked</div>
+      <h1>Not while you're ${isLocked(ctx.state) ? "on a Hard Stop" : "in debt"}.</h1>
+      <p class="sub">This is when changing the rules is most tempting, so it takes a moment. Type the phrase and wait 30 seconds, or pay off your debt first.</p>
+      <label class="fld" for="ph" style="text-align:left">Type: <b>${UNLOCK_PHRASE}</b></label>
+      <input type="text" id="ph" autocomplete="off">
+      <div class="row" style="justify-content:center;margin-top:16px"><button id="unlock" disabled>Unlock in 30s</button><a href="#mixer"><button class="ghost">Pay off debt</button></a></div>
+    </div>`;
+  let left = 30;
+  const refresh = () => {
+    const typed = $("#ph").value.trim().toLowerCase() === UNLOCK_PHRASE.toLowerCase();
+    $("#unlock").disabled = !(typed && left <= 0);
+    $("#unlock").textContent = left > 0 ? `Unlock in ${left}s` : typed ? "Unlock settings" : "Type the phrase";
+  };
+  $("#ph").oninput = refresh;
+  timerHandle = setInterval(() => { left = Math.max(0, left - 1); refresh(); }, 1000);
+  $("#unlock").onclick = () => { settingsUnlockedUntil = Date.now() + 5 * 60000; renderSettings(); };
+}
+
+function ruleRow(r, i) {
+  const def = DEFAULT_RULES.find((d) => d.host === r.host);
+  const feedOpt = def && def.paths.length
+    ? `<select data-k="scope"><option value="feed" ${r.paths.length ? "selected" : ""}>Feed pages only</option><option value="all" ${r.paths.length ? "" : "selected"}>Whole site</option></select>`
+    : `<span class="muted">Whole site</span>`;
+  return `<div class="rule" data-i="${i}" data-host="${esc(r.host)}">
+    <b>${esc(r.host)}</b>${feedOpt}
+    <label class="mini">limit <input type="number" min="0" max="600" data-k="budget" value="${r.budget || 0}"> min/day</label>
+    <button class="ghost x" data-k="del" aria-label="Remove ${esc(r.host)}">✕</button></div>`;
+}
+
 function renderSettings() {
+  clearInterval(timerHandle);
+  const risky = !ctx.settings.demoMode && (isLocked(ctx.state) || ctx.state.debt >= DEBT_THRESHOLD);
+  if (risky && Date.now() > settingsUnlockedUntil) return renderSettingsLock();
   const st = ctx.settings;
+  let rules = st.rules.map((r) => ({ ...r }));
   const opt = (id, title, desc, on) => `<label class="opt"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><span><b>${title}</b><small>${desc}</small></span></label>`;
   app.innerHTML = `
     <h1>Settings</h1><p class="sub">Every technique is optional. Turn on what helps.</p>
     <div class="grid">
       <div class="stack">
         <section class="card">
+          <h2>Where it watches</h2>
+          <p class="sub" style="margin-bottom:6px;font-size:13px">"Feed pages only" leaves lectures and DMs alone: on YouTube only Shorts and the home feed count.</p>
+          <div id="rules"></div>
+          <div class="row" style="margin-top:12px"><input type="text" id="newhost" placeholder="Add a site, e.g. news.ycombinator.com" style="flex:1"><button class="ghost" id="addhost">Add</button></div>
+          <div id="rulemsg"></div>
+          <label class="fld" for="itemLimit">Daily limit on Shorts, Reels &amp; TikToks (0 = off)</label>
+          <input type="number" id="itemLimit" min="0" max="500" value="${st.itemLimit}" style="width:120px;padding:10px;border-radius:12px;border:2px solid var(--line)">
+        </section>
+        <section class="card">
           <h2>Anti-doomscroll techniques</h2>
           ${opt("gate", "Mindful pause", "A 5-second breath and a quick \"why are you here, and for how long?\" before a feed opens.", st.gate)}
           ${opt("fade", "Colour fade", "The page slowly drains to greyscale as your Focus Debt builds, so scrolling literally gets duller.", st.fade)}
           ${opt("breaks", "20-20-20 eye breaks", "While you're drifting, a nudge every 20 minutes to look 20 feet away for 20 seconds.", st.breaks)}
-          ${opt("demo", "Demo Mode", "10 min of debt in ~20 seconds, a 15-second timer and a 10-minute Hard Stop.", st.demoMode)}
+          ${opt("demo", "Demo Mode", "10 min of debt in ~20 seconds, a 15-second timer and a 10-minute Hard Stop. Also switches the settings lock off.", st.demoMode)}
         </section>
         <section class="card">
           <h2>📷 Focus Mirror (camera)</h2>
@@ -486,7 +536,7 @@ function renderSettings() {
         <section class="card">
           <h2>You</h2>
           <label class="fld" for="name">Name on the Campfire</label><input type="text" id="name" value="${esc(st.name)}">
-          <label class="fld" for="sites">Distraction sites (comma separated)</label><input type="text" id="sites" value="${esc(st.sites.join(", "))}">
+          <p class="sub" style="margin:10px 0 0;font-size:12.5px">Your settings (never the API key) sync across your Chrome browsers.</p>
         </section>
         <section class="card">
           <h2>Optional AI tasks</h2>
@@ -502,6 +552,31 @@ function renderSettings() {
         <div id="msg"></div>
       </div>
     </div>`;
+
+  const drawRules = () => {
+    $("#rules").innerHTML = rules.map(ruleRow).join("");
+  };
+  drawRules();
+  $("#rules").addEventListener("input", (e) => {
+    const row = e.target.closest(".rule"); if (!row) return;
+    const r = rules[Number(row.dataset.i)];
+    if (e.target.dataset.k === "budget") r.budget = Math.max(0, Number(e.target.value) || 0);
+    if (e.target.dataset.k === "scope") {
+      const def = DEFAULT_RULES.find((d) => d.host === r.host);
+      r.paths = e.target.value === "feed" && def ? def.paths : [];
+    }
+  });
+  $("#rules").addEventListener("click", (e) => {
+    if (e.target.dataset.k !== "del") return;
+    rules.splice(Number(e.target.closest(".rule").dataset.i), 1); drawRules();
+  });
+  $("#addhost").onclick = () => {
+    const raw = $("#newhost").value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(raw)) { $("#rulemsg").innerHTML = `<p class="err">Enter a site like example.com</p>`; return; }
+    if (rules.some((r) => r.host === raw)) { $("#rulemsg").innerHTML = `<p class="err">Already in the list.</p>`; return; }
+    rules.push(DEFAULT_RULES.find((d) => d.host === raw) || { host: raw, paths: [], budget: 0 });
+    $("#newhost").value = ""; $("#rulemsg").innerHTML = ""; drawRules();
+  };
 
   $("#camToggle").onclick = async () => {
     const msg = $("#camMsg");
@@ -527,20 +602,32 @@ function renderSettings() {
   };
 
   $("#save").onclick = async () => {
+    // Custom sites need that one site's permission. Ask first, while the click still counts as a gesture.
+    const custom = rules.map((r) => r.host).filter((h) => !DEFAULT_SITES.includes(h));
+    let denied = [];
+    if (custom.length) {
+      const origins = custom.flatMap((h) => [`*://${h}/*`, `*://*.${h}/*`]);
+      const ok = await chrome.permissions.request({ origins }).catch(() => false);
+      if (!ok) { denied = custom; rules = rules.filter((r) => !custom.includes(r.host)); }
+    }
     ctx.settings = {
       ...ctx.settings,
+      rules: rules.length ? rules : DEFAULT_RULES,
+      itemLimit: Math.max(0, Number($("#itemLimit").value) || 0),
       demoMode: $("#demo").checked,
       gate: $("#gate").checked,
       fade: $("#fade").checked,
       breaks: $("#breaks").checked,
       name: $("#name").value.trim() || "You",
-      sites: $("#sites").value.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean),
       aiProvider: $("#prov").value,
       aiKey: $("#key").value.trim(),
     };
-    if (!ctx.settings.sites.length) ctx.settings.sites = DEFAULT_SITES;
     await saveSettings(ctx.settings);
-    $("#msg").innerHTML = `<div class="toast" style="margin-top:14px">Saved.</div>`;
+    await chrome.runtime.sendMessage({ type: "sites-sync" });
+    $("#msg").innerHTML = denied.length
+      ? `<div class="toast" style="margin-top:14px;background:#fbefc8;color:#8a6312">Saved, but Chrome permission for ${esc(denied.join(", "))} wasn't granted, so those sites were removed.</div>`
+      : `<div class="toast" style="margin-top:14px">Saved.</div>`;
+    if (denied.length) renderSettings();
   };
   $("#clear").onclick = async () => {
     await chrome.storage.local.clear();

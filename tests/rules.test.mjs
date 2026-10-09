@@ -1,0 +1,16 @@
+import { matchRule, feedItemKey, DEFAULT_RULES, migrateRules } from '../extension/lib/state.js';
+let fails=0; const t=(n,c)=>{console.log(c?'ok  ':'FAIL',n); if(!c)fails++;};
+const m=(h,p)=>!!matchRule(h,p,DEFAULT_RULES).rule;
+t('youtube /shorts tracked', m('www.youtube.com','/shorts/abc'));
+t('youtube home tracked', m('youtube.com','/'));
+t('youtube lecture NOT tracked', !m('www.youtube.com','/watch'));
+t('instagram reels tracked', m('instagram.com','/reels/xyz/'));
+t('instagram DMs NOT tracked', !m('instagram.com','/direct/inbox'));
+t('reddit whole site tracked', m('old.reddit.com','/r/anything'));
+t('github not a feed host', matchRule('github.com','/',DEFAULT_RULES).hostRule===null);
+t('host known but path untracked still reports hostRule', !!matchRule('youtube.com','/watch',DEFAULT_RULES).hostRule);
+t('item key shorts', feedItemKey('/shorts/abc')==='/shorts/abc');
+t('item key tiktok', feedItemKey('/@u/video/123456')==='/@u/video/123456');
+t('item key none for watch', feedItemKey('/watch')==='');
+t('migrate old sites list', migrateRules({sites:['reddit.com','foo.com']}).length===2 && migrateRules({sites:['foo.com']})[0].paths.length===0);
+process.exit(fails?1:0);

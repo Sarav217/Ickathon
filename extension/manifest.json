@@ -2,28 +2,75 @@
   "manifest_version": 3,
   "name": "Terrarium: Focus Debt",
   "short_name": "Terrarium",
-  "version": "2.1.1",
-  "description": "Catches doomscrolling as it happens, shows your Focus Debt, and swaps it for one 15-minute micro-task. Optional on-device camera Focus Mirror. Then it switches itself off until tomorrow.",
+  "version": "3.0.0",
+  "description": "Stops doomscrolling by replacing it, not nagging. Feed-aware limits, a mindful pause, Focus Debt, one 15-minute task, and a Hard Stop until tomorrow. No account, no tracking.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Open your Terrarium",
-    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png" }
+    "default_title": "Terrarium",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
   },
-  "background": { "service_worker": "background.js", "type": "module" },
-  "permissions": ["storage", "tabs", "alarms", "offscreen"],
-  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "offscreen",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://instagram.com/*",
+    "*://*.instagram.com/*",
+    "*://youtube.com/*",
+    "*://*.youtube.com/*",
+    "*://reddit.com/*",
+    "*://*.reddit.com/*",
+    "*://tiktok.com/*",
+    "*://*.tiktok.com/*",
+    "*://x.com/*",
+    "*://*.x.com/*",
+    "*://twitter.com/*",
+    "*://*.twitter.com/*",
+    "*://facebook.com/*",
+    "*://*.facebook.com/*"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "matches": [
+        "*://instagram.com/*",
+        "*://*.instagram.com/*",
+        "*://youtube.com/*",
+        "*://*.youtube.com/*",
+        "*://reddit.com/*",
+        "*://*.reddit.com/*",
+        "*://tiktok.com/*",
+        "*://*.tiktok.com/*",
+        "*://x.com/*",
+        "*://*.x.com/*",
+        "*://twitter.com/*",
+        "*://*.twitter.com/*",
+        "*://facebook.com/*",
+        "*://*.facebook.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
   ]
 }

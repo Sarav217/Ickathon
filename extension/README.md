@@ -1,4 +1,4 @@
-# Terrarium: Focus Debt (Chrome extension) v2
+# Terrarium: Focus Debt (Chrome extension) v3
 
 Catches doomscrolling as it happens, shows your Focus Debt, sends you to a Terrarium for one 15-minute micro-task, then locks the feeds until tomorrow.
 
@@ -42,3 +42,14 @@ Unpacked installs auto-reload within a few seconds when any extension file chang
 - **Camera-checked exercises** (pick "Exercise (camera-checked)" in the Life Mixer): squats, jumping jacks, overhead reaches. A bundled pose model (`vendor/mediapipe/pose_landmarker_lite.task`) counts reps on-device; the task completes when the rep goal is reached (3 reps in Demo Mode). Rep logic is in `lib/reps.js` with tests in `tests/reps.test.mjs` (`node tests/reps.test.mjs`).
 - **Other tasks** can't be seen by a camera (drawing, reading, a walk), so they use: a timer that **pauses while a feed site is the tab you're looking at**, plus an honest "Did you actually do it?" confirmation. Nothing is verified beyond that.
 - More stretch/movement tasks (sun-salutation flow, dance break).
+
+## v3: built after comparing three Web Store competitors (see `docs/competitors.md`)
+- **Path-aware rules:** only feed pages count (YouTube Shorts and home, Instagram Reels/Explore/home, whole TikTok and Reddit...). YouTube lectures and Instagram DMs are left alone. Edit in Settings.
+- **Shorts / Reels / TikTok counter:** each new item is counted as you swipe, adds a little debt, and has a daily limit (default 20).
+- **Per-site daily minute budgets** in Settings.
+- **Slimmer permissions:** no `<all_urls>`, no `tabs`. Only the listed feed sites; any extra site you add asks Chrome for just that site.
+- **Popup:** click the toolbar icon for debt gauge, today's minutes, items and a 7-day sparkline.
+- **Settings lock:** while you're in debt or on a Hard Stop, settings need a typed phrase and a 30-second wait (off in Demo Mode).
+- **Chrome sync** for settings (never the API key).
+- `PRIVACY.md` and `docs/STORE_LISTING.md` are ready for a Web Store submission.
+- Tests: `node tests/rules.test.mjs`, `node tests/reps.test.mjs`.

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"><title>Terrarium</title></head>
+<body>
+  <div class="top">
+    <div class="gauge">
+      <svg width="78" height="78" viewBox="0 0 78 78">
+        <circle cx="39" cy="39" r="32" fill="none" stroke="#e5ece0" stroke-width="8"/>
+        <circle id="arc" cx="39" cy="39" r="32" fill="none" stroke="#5fae73" stroke-width="8" stroke-linecap="round" stroke-dasharray="201.06" stroke-dashoffset="201.06" transform="rotate(-90 39 39)"/>
+      </svg>
+      <div class="num" id="num">0</div>
+    </div>
+    <div><div class="t">Focus Debt</div><div class="l" id="lbl">Calm</div><div class="s" id="sub"></div></div>
+  </div>
+  <div class="stats">
+    <div><b id="today">0m</b><span>on feeds today</span></div>
+    <div><b id="items">0</b><span>Shorts &amp; Reels</span></div>
+    <div><b id="plant">0/4</b><span>plant growth</span></div>
+  </div>
+  <div class="spark" id="spark"></div>
+  <div id="lock" class="lock" hidden>Hard Stop: feeds are closed until tomorrow.</div>
+  <button id="pay">Pay off debt now</button>
+  <a id="open" href="#">Open Terrarium</a>
+  <script type="module" src="popup.js"></script>
+</body></html>
