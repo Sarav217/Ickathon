@@ -351,19 +351,35 @@ async function renderPoseTask(task) {
 
   $("#pstart").onclick = async () => {
     $("#pstart").disabled = true; $("#pstart").textContent = "Loading model…"; $("#perr").innerHTML = "";
-    let stream, landmarker;
+    let stream, landmarker, stage = "camera";
+    const describe = (e) => {
+      if (e && (e.name || e.message)) return `${e.name || "Error"}${e.message ? ": " + e.message : ""}`;
+      try { return String(e) || JSON.stringify(e) || "unknown error"; } catch { return "unknown error"; }
+    };
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 } });
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 } });
+      } catch (e1) {
+        if (e1 && e1.name === "OverconstrainedError") stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        else throw e1;
+      }
+      stage = "model";
+      $("#pstart").textContent = "Loading model…";
       const { PoseLandmarker, FilesetResolver } = await import("./vendor/mediapipe/vision_bundle.mjs");
       const files = await FilesetResolver.forVisionTasks(chrome.runtime.getURL("vendor/mediapipe"));
-      landmarker = await PoseLandmarker.createFromOptions(files, {
-        baseOptions: { modelAssetPath: chrome.runtime.getURL("vendor/mediapipe/pose_landmarker_lite.task"), delegate: "CPU" },
+      const make = (delegate) => PoseLandmarker.createFromOptions(files, {
+        baseOptions: { modelAssetPath: chrome.runtime.getURL("vendor/mediapipe/pose_landmarker_lite.task"), delegate },
         runningMode: "VIDEO", numPoses: 1,
       });
+      landmarker = await make("CPU"); // CPU is plenty for the lite model and the most reliable
     } catch (e) {
+      console.error("Pose setup failed at", stage, e);
       stream && stream.getTracks().forEach((t) => t.stop());
-      $("#pstart").disabled = false; $("#pstart").textContent = "Start camera check";
-      $("#perr").innerHTML = `<p class="err">Couldn't start the camera (${esc(e.name || e.message)}). Allow it from the camera icon in the address bar, or use the timer instead.</p>`;
+      $("#pstart").disabled = false; $("#pstart").textContent = "Try again";
+      const hint = stage === "camera"
+        ? "Allow the camera from the camera icon in the address bar (or chrome://settings/content/camera), close other apps using it, then try again."
+        : "The exercise model failed to load. Reload the extension in chrome://extensions and try again.";
+      $("#perr").innerHTML = `<p class="err">Couldn't start the ${stage} (${esc(describe(e))}). ${hint} Or use the timer instead.</p>`;
       return;
     }
     const video = $("#pv"), canvas = $("#pc"), counter = new RepCounter(task.verify.exercise);

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Terrarium: Focus Debt",
   "short_name": "Terrarium",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Catches doomscrolling as it happens, shows your Focus Debt, and swaps it for one 15-minute micro-task. Optional on-device camera Focus Mirror. Then it switches itself off until tomorrow.",
   "icons": {
     "16": "icons/icon16.png",
