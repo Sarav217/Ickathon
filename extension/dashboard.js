@@ -94,7 +94,7 @@ function route() {
 function showHardStop() {
   $("#hs-plant").innerHTML = plantSVG(ctx.state.plantStage, 150);
   const when = new Date(ctx.state.lockedUntil);
-  $("#hs-sub").textContent = `Locked until ${when.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}. Distraction sites will remind you.`;
+  $("#hs-sub").textContent = `Locked until ${when.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}.\n\nEvery other app wants more of your time. Ours is designed to end.`;
   $("#hs-demo-reset").hidden = !ctx.settings.demoMode;
 }
 
@@ -139,7 +139,7 @@ function renderHome(welcome) {
             ${s.campfire.slice().sort((a, b) => b.at - a.at).map((e) =>
               `<li class="${e.you ? "you" : ""}"><span class="who">${esc(e.you ? ctx.settings.name : e.who)}</span> ${esc(e.text)}<time>${timeAgo(e.at)}</time></li>`).join("") || `<li class="empty">Nobody yet.</li>`}
           </ul>
-          <p class="fire">Up to 5 friends. No leaderboard, no streak shaming.</p>
+          <p class="fire">Up to 5 friends. Cooperative only — no leaderboards, no streak shaming. When someone is deep in debt, the circle can help them step away.</p>
         </section>
         <section class="card" id="mirror-card"></section>
       </div>
@@ -308,8 +308,8 @@ async function renderTask() {
 function renderConfirm(task) {
   $("#timercard").innerHTML = `
     <div class="step-label">Time's up</div>
-    <h2 style="font-size:24px;margin:10px 0">Did you actually do it?</h2>
-    <p class="sub">Be honest. Your plant only grows from real effort, and nobody checks but you.</p>
+    <h2 style="font-size:24px;margin:10px 0">Did you actually complete every step?</h2>
+    <p class="sub">Be honest. Your plant only grows from real effort. Marking this without doing the task defeats the whole point — and only you will know.</p>
     <div class="row" style="justify-content:center">
       <button id="yes">Yes, I did it</button><button class="ghost" id="no">Not really</button>
     </div>`;
